@@ -31,11 +31,12 @@ LEVELS = {'debug': logging.DEBUG,
 
 COUNTER = [
     u'Count',
-    u'Timer',
+    u'SendTimer',
 ]
 
 EXCEPT = [
     u'Type',
     u'StartTime',
     u'StopTime',
+    u'SendTimer',
 ]
