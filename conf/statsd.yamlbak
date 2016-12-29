@@ -1,0 +1,2 @@
+host: xg-statsd.elenet.me
+port: 8125

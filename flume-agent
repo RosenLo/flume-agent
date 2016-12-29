@@ -1,0 +1,174 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+"""
+Author: Rosen
+Mail: rosenluov@gmail.com
+File: flume-agent
+Created Time: 12/28/16 11:50
+"""
+
+# import logging
+import sys
+from logging.handlers import TimedRotatingFileHandler
+from multiprocessing import Process, Queue
+from os import getpid
+from time import time, sleep
+from traceback import print_exc
+
+import requests
+import statsd
+
+from conf.settings import (
+    FLUME_FILE,
+    EXCEPT,
+    STDERR,
+    STDOUT,
+    STATSD_FILE,
+    PID_FILE,
+    HOSTNAME,
+    COUNTER,
+)
+from utils.common import load_yaml_data, logging_conf
+from utils.daemonize import Daemon
+
+# log setting
+logging = logging_conf()
+log_formatter = logging.Formatter('%(asctime)s %(name)-12s: %(filename)s[line:%(lineno)d] %(levelname)s %(message)s')
+
+# info log
+flm_logger_out = logging.getLogger('')
+keep_out = TimedRotatingFileHandler(STDOUT, 'midnight', 1, 7)
+keep_out.setFormatter(log_formatter)
+flm_logger_out.setLevel(logging.INFO)
+flm_logger_out.addHandler(keep_out)
+
+# err log
+flm_logger_err = logging.getLogger('flume-agent-err')
+keep_err = TimedRotatingFileHandler(STDERR, 'midnight', 1, 7)
+keep_err.setFormatter(log_formatter)
+flm_logger_err.setLevel(logging.INFO)
+flm_logger_err.addHandler(keep_err)
+
+q = Queue(10)
+
+
+class MyDaemon(Daemon):
+    @staticmethod
+    def run():
+        flm_logger_out.info("Daemon started with pid %d! \n", getpid())
+        while True:
+            if int(time()) % 10 == 0:
+                p = Process(target=main)
+                p.start()
+                p.join()
+                sleep(1)
+
+
+def load_flume_conf(filename):
+    if filename:
+        data = load_yaml_data(filename)
+        ip = data.get('ip', '')
+        port = data.get('port', '')
+        prefix = data.get('prefix', '')
+        return ip, port, prefix
+
+
+def load_statsd_conf(filename):
+    if filename:
+        data = load_yaml_data(filename)
+        host = data.get('host', '')
+        port = data.get('port', '')
+        return host, port
+
+
+def get_flume_data(ip, port):
+    data = {}
+    try:
+        res = requests.get("http://{ip}:{port}/metrics".format(ip=ip, port=port), timeout=10)
+        flume_data = res.json()
+        if not flume_data:
+            raise ValueError("No data was obtained!")
+        for flume_type in flume_data:
+            metric_value = flume_data[flume_type]
+            for k in metric_value:
+                metric = flume_type + "." + k
+                data[metric] = metric_value[k]
+        for excl in EXCEPT:
+            for metric in data.keys():
+                if str(excl) in str(metric):
+                    data.pop(metric, None)
+        return data
+    except requests.exceptions.ReadTimeout as e:
+        flm_logger_err.error(str(e) + print_exc())
+        sys.exit(1)
+
+    except Exception as e:
+        flm_logger_err.error(str(e) + print_exc())
+        sys.exit(1)
+
+
+def counter_to_gauge(data=None):
+    if q.empty():
+        flm_logger_err.error('Queue is empty!')
+    else:
+        old_stats_data = q.get()
+        flm_logger_out.info('Get a message from the Queue.')
+        try:
+            for count in COUNTER:
+                for metric in data.keys():
+                    if str(count) in str(metric):
+                        data[metric] = round((int(data[metric]) - int(old_stats_data[metric])) / 10, 2)
+        except Exception as e:
+            flm_logger_err.error(str(e))
+            flm_logger_err.error(print_exc())
+
+    return data
+
+
+def send_to_statsd(statsd_client, data=None):
+    try:
+        if data:
+            for k, v in data.items():
+                metric = HOSTNAME + '.' + k
+                statsd_client.gauge(metric, v)
+            if q.empty():
+                q.put(data)
+                flm_logger_out.info("Data has been put to the Queue.")
+    except Exception as e:
+        flm_logger_err.error(str(e))
+
+
+def main():
+    flm_ip, flm_port, prefix = load_flume_conf(FLUME_FILE)
+    statsd_host, statsd_port = load_statsd_conf(STATSD_FILE)
+    statsd_client = statsd.StatsClient(statsd_host, statsd_port, prefix)
+    flm_data = get_flume_data(flm_ip, flm_port)
+
+    finally_flm_data = counter_to_gauge(flm_data)
+
+    # sent data of flume to statsd
+    send_to_statsd(statsd_client, finally_flm_data)
+    flm_logger_out.info('Delivery %d metrics success! \n', len(finally_flm_data))
+
+
+if __name__ == '__main__':
+    myDaemon = MyDaemon(pidfile=PID_FILE,
+                        stdout=STDOUT,
+                        stderr=STDERR
+                        )
+    args = sys.argv
+    if len(args) == 2:
+        if 'start' == args[1]:
+            myDaemon.start()
+        elif 'stop' == args[1]:
+            myDaemon.stop()
+        elif 'restart' == args[1]:
+            myDaemon.restart()
+        else:
+            flm_logger_err.error('*** Unknown command')
+            sys.exit(2)
+        sys.exit(0)
+    else:
+        print('Usage: {} start|stop|restart'.format(args[0]))
+        sys.exit(2)

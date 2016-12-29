@@ -1,0 +1,2 @@
+host: statsd.example.me
+port: 8125
