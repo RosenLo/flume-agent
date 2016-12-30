@@ -1,0 +1,15 @@
+[Unit]
+Description=Monitor agent for Flume
+After=network.target
+
+[Service]
+Type=forking
+WorkingDirectory=/opt/flume-monitor-agent
+PIDFile=/var/run/flume-monitor-agent/flume-monitor-agent.pid
+ExecStart=/opt/flume-monitor-agent/flume-monitor-agent start
+ExecReload=/opt/flume-monitor-agent/flume-monitor-agent restart
+ExecStop=/opt/flume-monitor-agent/flume-monitor-agent stop
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

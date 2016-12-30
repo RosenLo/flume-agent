@@ -21,16 +21,3 @@ def load_yaml_data(filename=None):
             return data
     except IOError:
         print_exc()
-
-
-def logging_conf(level=logging.INFO):
-    logging.basicConfig(level=level,
-                        format='%(asctime)s %(name)-12s: %(filename)s[line:%(lineno)d] %(levelname)s %(message)s',
-                        datefmt='%a, %d %b %Y %H:%M:%S',
-                        # filename=filename,
-                        filemode='a+'
-                        )
-    return logging
-
-
-

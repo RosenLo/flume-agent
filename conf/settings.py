@@ -15,23 +15,15 @@ from os import path
 BASE_DIR = path.dirname(path.abspath(__file__))
 FLUME_FILE = BASE_DIR + '/flume.yaml'
 STATSD_FILE = BASE_DIR + '/statsd.yaml'
-PID_FILE = '/var/run/flume-agent/flume-agent.pid'
+PID_FILE = '/var/run/flume-monitor-agent/flume-monitor-agent.pid'
 HOSTNAME = gethostname()
 
-STDOUT = '/data/log/flume-agent/flume-agent.log'
-STDERR = '/data/log/flume-agent/flume-agent.err'
-LOG_FILE = BASE_DIR + '/log_conf'
+STDOUT = '/data/log/flume-monitor-agent/flume-agent.log'
+STDERR = '/data/log/flume-monitor-agent/flume-agent.err'
 
-LEVELS = {'debug': logging.DEBUG,
-          'info': logging.INFO,
-          'warning': logging.WARNING,
-          'error': logging.ERROR,
-          'critical': logging.CRITICAL
-          }
 
 COUNTER = [
     u'Count',
-    u'SendTimer',
 ]
 
 EXCEPT = [

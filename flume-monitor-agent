@@ -4,11 +4,11 @@
 """
 Author: Rosen
 Mail: rosenluov@gmail.com
-File: flume-agent
+File: flume-monitor-agent
 Created Time: 12/28/16 11:50
 """
 
-# import logging
+import logging
 import sys
 from logging.handlers import TimedRotatingFileHandler
 from multiprocessing import Process, Queue
@@ -22,33 +22,24 @@ import statsd
 from conf.settings import (
     FLUME_FILE,
     EXCEPT,
-    STDERR,
     STDOUT,
+    STDERR,
     STATSD_FILE,
     PID_FILE,
     HOSTNAME,
     COUNTER,
 )
-from utils.common import load_yaml_data, logging_conf
+from utils.common import load_yaml_data
 from utils.daemonize import Daemon
 
 # log setting
-logging = logging_conf()
-log_formatter = logging.Formatter('%(asctime)s %(name)-12s: %(filename)s[line:%(lineno)d] %(levelname)s %(message)s')
+log_formatter = logging.Formatter('%(asctime)s %(name)s: %(filename)s[line:%(lineno)d] %(levelname)s %(message)s')
 
-# info log
 flm_logger_out = logging.getLogger('')
 keep_out = TimedRotatingFileHandler(STDOUT, 'midnight', 1, 7)
 keep_out.setFormatter(log_formatter)
 flm_logger_out.setLevel(logging.INFO)
 flm_logger_out.addHandler(keep_out)
-
-# err log
-flm_logger_err = logging.getLogger('flume-agent-err')
-keep_err = TimedRotatingFileHandler(STDERR, 'midnight', 1, 7)
-keep_err.setFormatter(log_formatter)
-flm_logger_err.setLevel(logging.INFO)
-flm_logger_err.addHandler(keep_err)
 
 q = Queue(10)
 
@@ -100,17 +91,19 @@ def get_flume_data(ip, port):
                     data.pop(metric, None)
         return data
     except requests.exceptions.ReadTimeout as e:
-        flm_logger_err.error(str(e) + print_exc())
+        flm_logger_out.error(e)
+        print_exc()
         sys.exit(1)
 
     except Exception as e:
-        flm_logger_err.error(str(e) + print_exc())
+        flm_logger_out.error(e)
+        print_exc()
         sys.exit(1)
 
 
 def counter_to_gauge(data=None):
     if q.empty():
-        flm_logger_err.error('Queue is empty!')
+        flm_logger_out.error('Queue is empty!')
     else:
         old_stats_data = q.get()
         flm_logger_out.info('Get a message from the Queue.')
@@ -120,8 +113,8 @@ def counter_to_gauge(data=None):
                     if str(count) in str(metric):
                         data[metric] = round((int(data[metric]) - int(old_stats_data[metric])) / 10, 2)
         except Exception as e:
-            flm_logger_err.error(str(e))
-            flm_logger_err.error(print_exc())
+            flm_logger_out.error(e)
+            print_exc()
 
     return data
 
@@ -136,7 +129,8 @@ def send_to_statsd(statsd_client, data=None):
                 q.put(data)
                 flm_logger_out.info("Data has been put to the Queue.")
     except Exception as e:
-        flm_logger_err.error(str(e))
+        flm_logger_out.error(e)
+        print_exc()
 
 
 def main():
@@ -154,8 +148,8 @@ def main():
 
 if __name__ == '__main__':
     myDaemon = MyDaemon(pidfile=PID_FILE,
-                        stdout=STDOUT,
-                        stderr=STDERR
+                        # stdout=STDOUT,
+                        stderr=STDERR,
                         )
     args = sys.argv
     if len(args) == 2:
@@ -166,7 +160,7 @@ if __name__ == '__main__':
         elif 'restart' == args[1]:
             myDaemon.restart()
         else:
-            flm_logger_err.error('*** Unknown command')
+            flm_logger_out.error('*** Unknown command')
             sys.exit(2)
         sys.exit(0)
     else:
