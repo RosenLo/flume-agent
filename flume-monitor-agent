@@ -125,9 +125,6 @@ def send_to_statsd(statsd_client, data=None):
             for k, v in data.items():
                 metric = HOSTNAME + '.' + k
                 statsd_client.gauge(metric, v)
-            if q.empty():
-                q.put(data)
-                flm_logger_out.info("Data has been put to the Queue.")
     except Exception as e:
         flm_logger_out.error(e)
         print_exc()
@@ -138,10 +135,13 @@ def main():
     statsd_host, statsd_port = load_statsd_conf(STATSD_FILE)
     statsd_client = statsd.StatsClient(statsd_host, statsd_port, prefix)
     flm_data = get_flume_data(flm_ip, flm_port)
+    if q.empty():
+        q.put(flm_data)
+        flm_logger_out.info("Data has been put to the Queue.")
 
     finally_flm_data = counter_to_gauge(flm_data)
 
-    # sent data of flume to statsd
+    # sent the monitor data of flume to statsd
     send_to_statsd(statsd_client, finally_flm_data)
     flm_logger_out.info('Delivery %d metrics success! \n', len(finally_flm_data))
 
