@@ -28,11 +28,13 @@ from conf.settings import (
     PID_FILE,
     HOSTNAME,
     COUNTER,
+    IF_DATA,
 )
 from utils.common import load_yaml_data
 from utils.daemonize import Daemon
 
 # log setting
+# logging = logging_conf()
 log_formatter = logging.Formatter('%(asctime)s %(name)s: %(filename)s[line:%(lineno)d] %(levelname)s %(message)s')
 
 flm_logger_out = logging.getLogger('')
@@ -75,30 +77,26 @@ def load_statsd_conf(filename):
 
 def get_flume_data(ip, port):
     data = {}
-    try:
-        res = requests.get("http://{ip}:{port}/metrics".format(ip=ip, port=port), timeout=10)
-        flume_data = res.json()
-        if not flume_data:
-            raise ValueError("No data was obtained!")
-        for flume_type in flume_data:
-            metric_value = flume_data[flume_type]
-            for k in metric_value:
-                metric = flume_type + "." + k
-                data[metric] = metric_value[k]
-        for excl in EXCEPT:
-            for metric in data.keys():
-                if str(excl) in str(metric):
-                    data.pop(metric, None)
-        return data
-    except requests.exceptions.ReadTimeout as e:
-        flm_logger_out.error(e)
-        print_exc()
-        sys.exit(1)
+    res = requests.get("http://{ip}:{port}/metrics".format(ip=ip, port=port), timeout=10)
+    flume_data = res.json()
+    for flume_type in flume_data:
+        metric_value = flume_data[flume_type]
+        for k in metric_value:
+            metric = flume_type + "." + k
+            data[metric] = metric_value[k]
+    for excl in EXCEPT:
+        for metric in data.keys():
+            if str(excl) in str(metric):
+                data.pop(metric, None)
+    return data
 
-    except Exception as e:
-        flm_logger_out.error(e)
-        print_exc()
-        sys.exit(1)
+
+def if_data(data=None):
+    if data == 1:
+        data = {'is_data': 1}
+    elif data == 0:
+        data = {'is_data': 0}
+    return data
 
 
 def counter_to_gauge(data=None):
@@ -134,16 +132,31 @@ def main():
     flm_ip, flm_port, prefix = load_flume_conf(FLUME_FILE)
     statsd_host, statsd_port = load_statsd_conf(STATSD_FILE)
     statsd_client = statsd.StatsClient(statsd_host, statsd_port, prefix)
-    flm_data = get_flume_data(flm_ip, flm_port)
+    try:
+        flm_data = get_flume_data(flm_ip, flm_port)
+    except requests.exceptions.ReadTimeout as e:
+        flm_logger_out.error(e)
+        print_exc()
+        not_data = if_data(IF_DATA['False'])
+        send_to_statsd(statsd_client, not_data)
+        sys.exit(1)
+
     if q.empty():
         q.put(flm_data)
         flm_logger_out.info("Data has been put to the Queue.")
 
-    finally_flm_data = counter_to_gauge(flm_data)
+    try:
+        is_data = if_data(IF_DATA["True"])
+        flm_data = dict(flm_data, **is_data)
 
-    # sent the monitor data of flume to statsd
-    send_to_statsd(statsd_client, finally_flm_data)
-    flm_logger_out.info('Delivery %d metrics success! \n', len(finally_flm_data))
+        finally_flm_data = counter_to_gauge(flm_data)
+
+        # sent data of flume to statsd
+        send_to_statsd(statsd_client, finally_flm_data)
+        flm_logger_out.info('Delivery %d metrics success! \n', len(finally_flm_data))
+    except Exception as e:
+        flm_logger_out.error(e)
+        print_exc()
 
 
 if __name__ == '__main__':

@@ -21,6 +21,11 @@ HOSTNAME = gethostname()
 STDOUT = '/data/log/flume-monitor-agent/flume-agent.log'
 STDERR = '/data/log/flume-monitor-agent/flume-agent.err'
 
+IF_DATA = {
+    u'True': 1,
+    u'False': 0
+}
+
 
 COUNTER = [
     u'Count',
